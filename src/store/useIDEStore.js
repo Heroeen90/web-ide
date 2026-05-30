@@ -169,18 +169,35 @@ const useIDEStore = create(
         get().expandFolder(path);
       },
 
-      deleteFile(path) {
+            deleteFile(path) {
         set(s => {
-          const files    = { ...s.files };
-          // Delete file and any sub-files if it's a folder prefix
+          const files = { ...s.files };
+          
+          // 1. حذف الملف أو المجلد وكل محتوياته من قائمة الملفات
           Object.keys(files).forEach(k => {
             if (k === path || k.startsWith(path + '/')) delete files[k];
           });
+
+          // 2. تنظيف المجلد المحذوف وأي مجلدات فرعية بداخله من قائمة expandedFolders
+          const expandedFolders = { ...s.expandedFolders };
+          delete expandedFolders[path];
+          Object.keys(expandedFolders).forEach(k => {
+            if (k.startsWith(path + '/')) delete expandedFolders[k];
+          });
+
+          // 3. تحديث التبويبات المفتوحة
           const openTabs   = s.openTabs.filter(t => t !== path && !t.startsWith(path + '/'));
           const activeFile = !openTabs.includes(s.activeFile) ? (openTabs[0] ?? null) : s.activeFile;
-          return { files, openTabs, activeFile };
+
+          return { 
+            files, 
+            expandedFolders, // تمت إضافتها للتنظيف الافتراضي
+            openTabs, 
+            activeFile 
+          };
         });
       },
+
 
       renameFile(oldPath, newPath) {
         const { files } = get();
