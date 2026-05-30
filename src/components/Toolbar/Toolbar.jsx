@@ -1,5 +1,9 @@
 /**
- * Toolbar.jsx v2 — Professional top toolbar
+ * Toolbar.jsx v3 — Enterprise Top Toolbar with Dashboard Integration
+ * ─────────────────────────────────────────────────────────────────────────────
+ * ✅ ربط جذري وشامل: يتزامن لحظياً مع تبديل وإنشاء المشاريع المعزولة.
+ * ✅ زر "رابط الزبون" مدمج للديسكتوب لنسخ الرابط المشفر بنقرة واحدة.
+ * ✅ معالجة حماية الـ Sandbox لضمان التوافق المطلق مع المتصفحات الخارجية.
  */
 import { useRef, useState } from 'react';
 import useIDEStore from '../../store/useIDEStore';
@@ -14,6 +18,7 @@ export default function Toolbar({ onRun, isRunning, babelReady }) {
     loadProject, resetProject, addFiles,
     toggleSidebar, toggleConsole, togglePreview,
     isSidebarOpen, isConsoleOpen, isPreviewOpen,
+    createNewProject, generateClientLink // استدعاء الدوال السحرية للمشاريع المتعددة
   } = useIDEStore();
 
   const [editName,  setEditName]  = useState(false);
@@ -28,6 +33,32 @@ export default function Toolbar({ onRun, isRunning, babelReady }) {
     setEditName(false);
   }
 
+  // دالة إنشاء مشروع جديد معزول تماماً للزبون
+  const handleCreateNewProject = () => {
+    const name = prompt("📂 أدخل اسم المشروع الجديد للزبون (مثال: متجر فيروز العراقي):");
+    if (name && name.trim() !== "") {
+      createNewProject(name.trim());
+      alert(`✅ تم إنشاء مساحة العمل الحرة لمشروع "${name}" بنجاح!`);
+    }
+  };
+
+  // دالة توليد ونسخ الرابط السحري للزبون
+  const handleCopyClientLink = () => {
+    const link = generateClientLink();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link);
+      alert("🔗 تم نسخ رابط المعاينة المستقل والمشفر للزبون بنجاح! جاهز للإرسال.");
+    } else {
+      const textArea = document.createElement("textarea");
+      textArea.value = link;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
+      alert("🔗 تم نسخ رابط المعاينة بنجاح (طريقة بديلة)!");
+    }
+  };
+
   async function handleUpload(e) {
     const files = e.target.files;
     if (!files?.length) return;
@@ -36,7 +67,7 @@ export default function Toolbar({ onRun, isRunning, babelReady }) {
       loadProject(data);
     } else {
       const newFiles = await readUploadedFiles(files);
-      addFiles(newFiles);
+      if (typeof addFiles === 'function') addFiles(newFiles);
     }
     e.target.value = '';
   }
@@ -49,8 +80,8 @@ export default function Toolbar({ onRun, isRunning, babelReady }) {
       try {
         const data = JSON.parse(ev.target.result);
         if (data.files) loadProject(data);
-        else alert('Invalid .webide.json file');
-      } catch { alert('Could not parse file'); }
+        else alert('ملف .webide.json غير صالح');
+      } catch { alert('فشل قراءة وتحليل الملف'); }
     };
     reader.readAsText(file);
     e.target.value = '';
@@ -62,13 +93,33 @@ export default function Toolbar({ onRun, isRunning, babelReady }) {
     <div style={{
       display:'flex', alignItems:'center', height:48, padding:'0 12px', gap:6,
       background:'#0a1628', borderBottom:'1px solid #1e3a5c', flexShrink:0,
-      position:'relative', zIndex:10,
+      position:'relative', zIndex:10, direction: 'ltr'
     }}>
       {/* Brand */}
       <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0, marginRight:4 }}>
         <span style={{ fontSize:20 }}>⚡</span>
-        <span style={{ color:'#00d4cc', fontWeight:900, fontSize:14, fontFamily:'monospace', letterSpacing:'-0.5px' }}>WebIDE</span>
+        <span style={{ color:'#00d4cc', fontWeight:900, fontSize:14, fontFamily:'monospace', letterSpacing:'-0.5px' }}>WebIDE Pro</span>
       </div>
+
+      {divider}
+
+      {/* 🟢 زر إنشاء مشروع جديد (Dashboard Entry) */}
+      <button onClick={handleCreateNewProject} style={{
+        display:'flex', alignItems:'center', gap:4, padding:'0 12px', height:30,
+        borderRadius:8, border:'none', fontWeight:700, fontSize:12, cursor:'pointer',
+        background: '#10b981', color: '#fff', flexShrink:0, transition:'opacity .15s'
+      }} onMouseEnter={e=>e.target.style.opacity=0.9} onMouseLeave={e=>e.target.style.opacity=1}>
+        ➕ Project
+      </button>
+
+      {/* 🔵 زر نسخ الرابط السحري للزبون الحالي */}
+      <button onClick={handleCopyClientLink} style={{
+        display:'flex', alignItems:'center', gap:4, padding:'0 12px', height:30,
+        borderRadius:8, border:'1px solid #00d4cc', fontWeight:700, fontSize:12, cursor:'pointer',
+        background: 'rgba(0,212,204,0.08)', color: '#00d4cc', flexShrink:0, transition:'all .15s'
+      }} onMouseEnter={e=>{e.target.style.background='#00d4cc'; e.target.style.color='#070d19'}} onMouseLeave={e=>{e.target.style.background='rgba(0,212,204,0.08)'; e.target.style.color='#00d4cc'}}>
+        🔗 Copy Link
+      </button>
 
       {divider}
 
@@ -107,7 +158,7 @@ export default function Toolbar({ onRun, isRunning, babelReady }) {
 
       {divider}
 
-      {/* Project name */}
+      {/* Project name display */}
       <div style={{ flex:1, minWidth:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
         {editName ? (
           <input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)}
