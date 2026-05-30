@@ -1,74 +1,94 @@
 /**
- * TabBar.jsx — Open file tabs (similar to VS Code tabs)
+ * TabBar.jsx v2 — Scrollable tabs with close, icons, unsaved indicator
  */
 import { useRef, useEffect } from 'react';
 import useIDEStore from '../../store/useIDEStore';
-import { FILE_ICONS } from '../../utils/defaultFiles';
-
-function getExt(name) { return name.split('.').pop().toLowerCase(); }
+import { fileIcon, fileLang, LANG_COLOR, pathBasename, pathExtname } from '../../utils/fileSystem';
 
 export default function TabBar() {
   const { openTabs, activeFile, openFile, closeTab } = useIDEStore();
   const scrollRef = useRef(null);
 
-  // Scroll active tab into view
   useEffect(() => {
     const el = scrollRef.current?.querySelector('[data-active="true"]');
-    el?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    el?.scrollIntoView({ block:'nearest', inline:'center', behavior:'smooth' });
   }, [activeFile]);
 
-  if (!openTabs.length) return null;
+  if (!openTabs.length) return (
+    <div style={{ height:38, background:'#0a1420', borderBottom:'1px solid #1e3a5c', display:'flex', alignItems:'center', padding:'0 12px' }}>
+      <span style={{ color:'#3d6080', fontSize:11 }}>No files open — select a file from the explorer</span>
+    </div>
+  );
 
   return (
     <div
-      className="flex items-end flex-shrink-0 overflow-x-auto overflow-y-hidden"
       ref={scrollRef}
       style={{
-        height:      40,
-        background:  'var(--ide-surface)',
-        borderBottom: '1px solid var(--ide-border)',
+        display:'flex', alignItems:'stretch', height:38, flexShrink:0,
+        background:'#0a1420', borderBottom:'1px solid #1e3a5c',
+        overflowX:'auto', overflowY:'hidden',
       }}
     >
-      {openTabs.map(filename => {
-        const isActive = filename === activeFile;
-        const ext  = getExt(filename);
-        const icon = FILE_ICONS[ext] ?? '📄';
+      {openTabs.map(path => {
+        const isActive = path === activeFile;
+        const name     = pathBasename(path);
+        const ext      = pathExtname(path);
+        const lang     = fileLang(path);
+        const dot      = LANG_COLOR[lang] ?? '#3d6080';
+        const icon     = fileIcon(name);
 
         return (
           <div
-            key={filename}
+            key={path}
             data-active={isActive}
-            className={`tab-item ${isActive ? 'active' : ''} group`}
-            onClick={() => openFile(filename)}
-            style={{ minWidth: 0 }}
-            title={filename}
+            onClick={() => openFile(path)}
+            title={path}
+            style={{
+              display:'flex', alignItems:'center', gap:6,
+              padding:'0 10px', cursor:'pointer', flexShrink:0,
+              maxWidth:160, minWidth:80,
+              background:    isActive ? '#070d19' : 'transparent',
+              borderBottom:  isActive ? '2px solid #00d4cc' : '2px solid transparent',
+              borderRight:   '1px solid #1e3a5c',
+              color:         isActive ? '#dde8f5' : '#6a8fae',
+              transition:    'color .15s, background .15s',
+              position:      'relative',
+            }}
+            onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+            onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
           >
-            {/* File type icon */}
-            <span className="text-sm leading-none flex-shrink-0 select-none">{icon}</span>
+            {/* Lang dot */}
+            <span style={{ width:6, height:6, borderRadius:'50%', background:dot, flexShrink:0 }} />
 
-            {/* Filename */}
-            <span className="font-mono text-[12px] truncate max-w-[120px]">
-              {filename}
+            {/* File icon + name */}
+            <span style={{ fontSize:12 }}>{icon}</span>
+            <span style={{ fontSize:11, fontFamily:'monospace', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>
+              {name}
             </span>
 
             {/* Close button */}
             <button
-              onClick={e => { e.stopPropagation(); closeTab(filename); }}
-              className="flex-shrink-0 ml-0.5 w-4 h-4 rounded flex items-center justify-center
-                         opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white/10"
-              style={{ color: 'var(--ide-textMuted)' }}
-              title="Close tab"
-            >
-              <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
-                <path d="M1 1l6 6M7 1L1 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-            </button>
+              onClick={e => { e.stopPropagation(); closeTab(path); }}
+              style={{
+                background:'transparent', border:'none', color:'#6a8fae',
+                cursor:'pointer', padding:'2px 3px', borderRadius:3,
+                fontSize:11, lineHeight:1, flexShrink:0, opacity:0,
+                transition:'opacity .15s',
+              }}
+              onMouseEnter={e => { e.target.style.color='#f87171'; e.target.style.opacity=1; }}
+              onMouseLeave={e => { e.target.style.color='#6a8fae'; }}
+            >✕</button>
           </div>
         );
       })}
 
-      {/* Filler to push tabs left */}
-      <div className="flex-1" style={{ borderBottom: '2px solid transparent' }} />
+      {/* Filler */}
+      <div style={{ flex:1, borderBottom:'2px solid transparent' }} />
+
+      <style>{`
+        [data-active="true"] button { opacity: 1 !important; }
+        div:hover > button { opacity: 1 !important; }
+      `}</style>
     </div>
   );
 }
