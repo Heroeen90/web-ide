@@ -1,5 +1,6 @@
 /**
- * App.jsx v2 — Main IDE shell
+ * App.jsx v3 — Main IDE shell with Smart Multi-Project Client Preview Mode
+ * ✅ Embedded URL-Router to hide IDE from clients (?preview=true)
  * ✅ Desktop: resizable panels (sidebar, preview, console)
  * ✅ Mobile: bottom-tab navigation with 4 panels
  * ✅ Settings modal
@@ -88,6 +89,15 @@ export default function App() {
   const [babelReady,  setBabelReady]  = useState(!!window.Babel);
   const [isRunning,   setIsRunning]   = useState(false);
 
+  // 🛡️ فحص الرابط للتحقق مما إذا كان الزائر هو "الزبون" لعرض المشروع له فقط وممتداً على كامل الشاشة
+  const [isClientPreviewMode, setIsClientPreviewMode] = useState(false);
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('preview') === 'true') {
+      setIsClientPreviewMode(true);
+    }
+  }, []);
+
   const timerRef  = useRef(null);
   const filesRef  = useRef(files);
   useEffect(() => { filesRef.current = files; }, [files]);
@@ -147,7 +157,19 @@ export default function App() {
   const sharedPreviewProps = { html:previewHTML, previewKey, onRun:() => runPreview(true), isRunning, babelReady };
 
   // ══════════════════════════════════════════════════════════════════════
-  // Mobile layout
+  // 🌟 وضع العرض المخصص للزبائن (Client Preview Mode) 🌟
+  // يخفي بيئة التطوير تماماً ويعرض المعاينة على كامل شاشة اللمس للهاتف أو الكمبيوتر
+  // ══════════════════════════════════════════════════════════════════════
+  if (isClientPreviewMode) {
+    return (
+      <div style={{ width: '100vw', height: '100vh', background: '#070d19', overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+        <Preview {...sharedPreviewProps} style={{ flex: 1, width: '100%', height: '100%', border: 'none' }} />
+      </div>
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Mobile layout (Developer)
   // ══════════════════════════════════════════════════════════════════════
   if (isMobile) {
     return (
@@ -188,7 +210,7 @@ export default function App() {
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // Desktop layout
+  // Desktop layout (Developer)
   // ══════════════════════════════════════════════════════════════════════
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh', overflow:'hidden', background:'#070d19', color:'#dde8f5' }}>
