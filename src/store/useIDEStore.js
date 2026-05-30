@@ -148,13 +148,31 @@ const useIDEStore = create(
       },
 
       generateClientLink: () => {
-        const { currentProjectId } = get();
-        if (!currentProjectId) {
-          const autoId = get().createNewProject(get().projectName);
-          return `${window.location.origin}${window.location.pathname}?project=${autoId}&preview=true`;
-        }
-        return `${window.location.origin}${window.location.pathname}?project=${currentProjectId}&preview=true`;
-      },
+  const { currentProjectId, projectName, files } = get();
+  
+  // حزم بيانات المشروع الحالية وتشفيرها داخل الرابط
+  const projectPayload = {
+    id: currentProjectId || 'dynamic_proj',
+    name: projectName,
+    files: files
+  };
+
+  try {
+    // تحويل الكائن إلى نص ثم تشفيره بأسلوب Base64 آمن للروابط
+    const jsonString = JSON.stringify(projectPayload);
+    const utf8Bytes = new TextEncoder().encode(jsonString);
+    const base64 = btoa(String.fromCharCode(...utf8Bytes))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, ''); // تنظيف الحواف
+
+    const baseUrl = window.location.origin + window.location.pathname;
+    return `${baseUrl}?payload=${base64}&preview=true`;
+  } catch (e) {
+    console.error("فشل تشفير رابط المشروع:", e);
+    return `${window.location.origin}${window.location.pathname}?preview=true`;
+  }
+},
 
       // ═══════════════════════════════════════════════════════════════════════
       // 🔥 تحديث إجراءات الملفات لتعمل مباشرة داخل الكائن النشط للمشروع الحقيقي
