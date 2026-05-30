@@ -1,11 +1,10 @@
 /**
- * App.jsx v3 — Main IDE shell with Smart Multi-Project Client Preview Mode
- * ✅ Embedded URL-Router to hide IDE from clients (?preview=true)
- * ✅ Desktop: resizable panels (sidebar, preview, console)
- * ✅ Mobile: bottom-tab navigation with 4 panels
- * ✅ Settings modal
- * ✅ Smart auto-refresh (only on valid code)
- * ✅ Drag-resize handles
+ * App.jsx v4 — Main IDE shell with Smart Multi-Project Client Preview Mode
+ * ─────────────────────────────────────────────────────────────────────────────
+ * الحل الجذري الشامل:
+ * ✅ راوتر ديناميكي مدمج لعزل لوحة التحكم وعرض المشاريع المستقلة للزبائن (?project=ID&preview=true)
+ * ✅ أتمتة كاملة: إنشاء مشاريع غير محدودة محلياً دون الحاجة لمستودعات GitHub منفصلة لكل زبون.
+ * ✅ أزرار ذكية مدمجة في هيدر الموبايل لإنشاء المشاريع ونسخ الروابط المباشرة بنقرة واحدة.
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import useIDEStore          from './store/useIDEStore';
@@ -80,6 +79,7 @@ export default function App() {
     isSettingsOpen,
     settings,
     addLog, clearConsole,
+    loadProjectById // استدعاء دالة جلب كود المشروع بواسطة الـ ID من الـ Store المطور
   } = useIDEStore();
 
   const isMobile    = useIsMobile();
@@ -89,14 +89,22 @@ export default function App() {
   const [babelReady,  setBabelReady]  = useState(!!window.Babel);
   const [isRunning,   setIsRunning]   = useState(false);
 
-  // 🛡️ فحص الرابط للتحقق مما إذا كان الزائر هو "الزبون" لعرض المشروع له فقط وممتداً على كامل الشاشة
-  const [isClientPreviewMode, setIsClientPreviewMode] = useState(false);
+  // 📡 الراديكال راوتر: التحقق الذكي من هوية الزائر لعرض مشروعه بملء الشاشة أو فتح الـ IDE للمطور
+  const [routingState, setRoutingState] = useState({ isPreviewMode: false, targetProject: null });
+
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('preview') === 'true') {
-      setIsClientPreviewMode(true);
+    const projectParam = urlParams.get('project'); 
+    const previewParam = urlParams.get('preview') === 'true';
+
+    // إذا كان الرابط يحتوي على معرف مشروع ووسم المعاينة، نقوم بتفعيل وضع عزل الـ IDE للزبون فوراً
+    if (projectParam && previewParam) {
+      setRoutingState({ isPreviewMode: true, targetProject: projectParam });
+      if (typeof loadProjectById === 'function') {
+        loadProjectById(projectParam);
+      }
     }
-  }, []);
+  }, [loadProjectById]);
 
   const timerRef  = useRef(null);
   const filesRef  = useRef(files);
@@ -157,10 +165,10 @@ export default function App() {
   const sharedPreviewProps = { html:previewHTML, previewKey, onRun:() => runPreview(true), isRunning, babelReady };
 
   // ══════════════════════════════════════════════════════════════════════
-  // 🌟 وضع العرض المخصص للزبائن (Client Preview Mode) 🌟
-  // يخفي بيئة التطوير تماماً ويعرض المعاينة على كامل شاشة اللمس للهاتف أو الكمبيوتر
+  // 🔥 وضع العرض المخصص للزبائن (Client Preview Mode)
+  // يعزل الشاشة ويعرض مشروع الزبون المستهدف فقط بملء الشاشة بخصوصية تامة واختفاء الـ IDE
   // ══════════════════════════════════════════════════════════════════════
-  if (isClientPreviewMode) {
+  if (routingState.isPreviewMode) {
     return (
       <div style={{ width: '100vw', height: '100vh', background: '#070d19', overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
         <Preview {...sharedPreviewProps} style={{ flex: 1, width: '100%', height: '100%', border: 'none' }} />
@@ -169,7 +177,7 @@ export default function App() {
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // Mobile layout (Developer)
+  // Mobile layout (Developer Workspace)
   // ══════════════════════════════════════════════════════════════════════
   if (isMobile) {
     return (
@@ -210,7 +218,7 @@ export default function App() {
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // Desktop layout (Developer)
+  // Desktop layout (Developer Workspace)
   // ══════════════════════════════════════════════════════════════════════
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh', overflow:'hidden', background:'#070d19', color:'#dde8f5' }}>
@@ -260,30 +268,83 @@ export default function App() {
   );
 }
 
-// ─── Compact mobile header ────────────────────────────────────────────────────
+// ─── Compact mobile header (المكون المطور الذي يحتوي على أزرار إدارة الروابط والمشاريع) ───
 function MobileHeader({ onRun, isRunning, babelReady }) {
-  const { projectName, settings, updateSetting, openSettings } = useIDEStore();
+  const { 
+    projectName, 
+    settings, 
+    updateSetting, 
+    openSettings,
+    createNewProject,
+    generateClientLink
+  } = useIDEStore();
+
+  // دالة طلب الاسم وإنشاء مشروع معزول جديد بالكامل
+  const handleCreateProject = () => {
+    const name = prompt("📂 أدخل اسم المشروع الجديد للزبون (مثال: متجر فيروز):");
+    if (name && name.trim() !== "") {
+      createNewProject(name.trim());
+      alert(`✅ تم إنشاء مساحة عمل مستقلة لمشروع "${name}" بنجاح!`);
+    }
+  };
+
+  // دالة نسخ الرابط الذكي للزبون الحالي الحامل لمعرف الـ ID
+  const handleCopyLink = () => {
+    const link = generateClientLink();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link);
+      alert("🔗 تم نسخ رابط المعاينة المستقل للزبون بنجاح! جاهز للإرسال الفوري.");
+    } else {
+      const textArea = document.createElement("textarea");
+      textArea.value = link;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
+      alert("🔗 تم نسخ رابط المعاينة بنجاح (طريقة بديلة هاتفية)!");
+    }
+  };
+
   return (
     <div style={{
-      display:'flex', alignItems:'center', gap:8, padding:'0 12px',
-      height:48, background:'#0a1628', borderBottom:'1px solid #1e3a5c', flexShrink:0,
+      display:'flex', alignItems:'center', gap:6, padding:'0 8px',
+      height:54, background:'#0a1628', borderBottom:'1px solid #1e3a5c', flexShrink:0,
     }}>
-      <span style={{ fontSize:18 }}>⚡</span>
-      <span style={{ color:'#00d4cc', fontWeight:700, fontSize:13, fontFamily:'monospace', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+      {/* زر إنشاء مشروع جديد */}
+      <button onClick={handleCreateProject} style={{
+        background: '#10b981', color: '#fff', border: 'none', padding: '6px 10px', 
+        borderRadius: 6, fontSize: 11, fontWeight: 'bold', cursor: 'pointer'
+      }}>
+        ➕ مشروع
+      </button>
+
+      {/* اسم المشروع النشط حالياً */}
+      <span style={{ 
+        color:'#00d4cc', fontWeight:700, fontSize:12, fontFamily:'monospace', 
+        flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', textAlign: 'center' 
+      }}>
         {projectName}
       </span>
+
+      {/* زر نسخ رابط المعاينة الفوري للزبون */}
+      <button onClick={handleCopyLink} style={{
+        background: 'rgba(0, 212, 204, 0.15)', color: '#00d4cc', border: '1px solid #00d4cc', 
+        padding: '6px 10px', borderRadius: 6, fontSize: 11, fontWeight: 'bold', cursor: 'pointer'
+      }}>
+        🔗 رابط
+      </button>
+
       <button onClick={() => updateSetting('autoRefresh', !settings.autoRefresh)} style={{
-        padding:'4px 10px', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer',
+        padding:'6px 10px', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer',
         border:`1px solid ${settings.autoRefresh ? 'rgba(0,212,204,.4)' : '#1e3a5c'}`,
         background: settings.autoRefresh ? 'rgba(0,212,204,.1)' : 'transparent',
         color:      settings.autoRefresh ? '#00d4cc' : '#6a8fae',
       }}>⟳</button>
-      <button onClick={openSettings} style={{ background:'transparent', border:'none', color:'#6a8fae', fontSize:18, cursor:'pointer', padding:'2px 4px' }}>⚙</button>
+      <button onClick={openSettings} style={{ background:'transparent', border:'none', color:'#6a8fae', fontSize:16, cursor:'pointer', padding:'2px' }}>⚙</button>
       <button onClick={onRun} disabled={!babelReady || isRunning} style={{
-        padding:'6px 16px', borderRadius:8, border:'none', fontWeight:700, fontSize:13,
+        padding:'6px 12px', borderRadius:6, border:'none', fontWeight:700, fontSize:12,
         background: babelReady ? '#00d4cc' : '#122033', color: babelReady ? '#070d19' : '#6a8fae',
         cursor:'pointer', opacity:(!babelReady||isRunning)?0.7:1,
-        boxShadow: babelReady ? '0 0 12px rgba(0,212,204,.3)' : 'none',
       }}>
         {isRunning ? '…' : '▶ Run'}
       </button>
