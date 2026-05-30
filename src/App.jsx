@@ -1,10 +1,10 @@
 /**
- * App.jsx v4 — Main IDE shell with Smart Multi-Project Client Preview Mode
+ * App.jsx v5 — Ultimate Multi-Project Enterprise Router
  * ─────────────────────────────────────────────────────────────────────────────
- * الحل الجذري الشامل:
- * ✅ راوتر ديناميكي مدمج لعزل لوحة التحكم وعرض المشاريع المستقلة للزبائن (?project=ID&preview=true)
- * ✅ أتمتة كاملة: إنشاء مشاريع غير محدودة محلياً دون الحاجة لمستودعات GitHub منفصلة لكل زبون.
- * ✅ أزرار ذكية مدمجة في هيدر الموبايل لإنشاء المشاريع ونسخ الروابط المباشرة بنقرة واحدة.
+ * الحل النهائي لمشكلة الشاشة البيضاء في المتصفحات الأخرى:
+ * ✅ يدعم فك تشفير الكود من الرابط مباشرة (?payload=...) ليعمل على أي جهاز في العالم.
+ * ✅ يدعم التوافق الرجعي مع الروابط العادية الخاصة بجهازك (?project=...).
+ * ✅ يعزل لوحة التحكم وعرض المشاريع المستقلة للزبائن بملء الشاشة بخصوصية تامة.
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import useIDEStore          from './store/useIDEStore';
@@ -79,7 +79,7 @@ export default function App() {
     isSettingsOpen,
     settings,
     addLog, clearConsole,
-    loadProjectById // استدعاء دالة جلب كود المشروع بواسطة الـ ID من الـ Store المطور
+    loadProjectById
   } = useIDEStore();
 
   const isMobile    = useIsMobile();
@@ -89,18 +89,40 @@ export default function App() {
   const [babelReady,  setBabelReady]  = useState(!!window.Babel);
   const [isRunning,   setIsRunning]   = useState(false);
 
-  // 📡 الراديكال راوتر: التحقق الذكي من هوية الزائر لعرض مشروعه بملء الشاشة أو فتح الـ IDE للمطور
+  // 📡 الراوتر المتطور: معالجة البيانات القادمة من المتصفحات الخارجية والزبائن
   const [routingState, setRoutingState] = useState({ isPreviewMode: false, targetProject: null });
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const projectParam = urlParams.get('project'); 
+    const payloadParam = urlParams.get('payload');
+    const projectParam = urlParams.get('project');
     const previewParam = urlParams.get('preview') === 'true';
 
-    // إذا كان الرابط يحتوي على معرف مشروع ووسم المعاينة، نقوم بتفعيل وضع عزل الـ IDE للزبون فوراً
-    if (projectParam && previewParam) {
-      setRoutingState({ isPreviewMode: true, targetProject: projectParam });
-      if (typeof loadProjectById === 'function') {
+    if (previewParam) {
+      setRoutingState({ isPreviewMode: true, targetProject: 'client_view' });
+
+      // 💥 فك تشفير البيانات وحقنها إذا فتح الزبون الرابط من جهاز خارجي فارغ الذاكرة
+      if (payloadParam) {
+        try {
+          let base64 = payloadParam.replace(/-/g, '+').replace(/_/g, '/');
+          while (base64.length % 4) base64 += '=';
+          
+          const rawData = atob(base64);
+          const uint8Array = new Uint8Array([...rawData].map(c => c.charCodeAt(0)));
+          const jsonString = new TextDecoder().decode(uint8Array);
+          const parsedProject = JSON.parse(jsonString);
+
+          if (parsedProject && parsedProject.files) {
+            useIDEStore.setState({
+              files: parsedProject.files,
+              projectName: parsedProject.name
+            });
+          }
+        } catch (err) {
+          console.error("خلل أثناء فك تشفير بيانات الرابط الخارجي:", err);
+        }
+      } else if (projectParam && typeof loadProjectById === 'function') {
+        // إذا كنت تفتح الرابط من جهازك الشخصي الذي يحتوي على الذاكرة المحلية
         loadProjectById(projectParam);
       }
     }
@@ -165,8 +187,7 @@ export default function App() {
   const sharedPreviewProps = { html:previewHTML, previewKey, onRun:() => runPreview(true), isRunning, babelReady };
 
   // ══════════════════════════════════════════════════════════════════════
-  // 🔥 وضع العرض المخصص للزبائن (Client Preview Mode)
-  // يعزل الشاشة ويعرض مشروع الزبون المستهدف فقط بملء الشاشة بخصوصية تامة واختفاء الـ IDE
+  // وضع العرض المستقل للزبائن (Client Preview Mode) بملء الشاشة
   // ══════════════════════════════════════════════════════════════════════
   if (routingState.isPreviewMode) {
     return (
@@ -177,7 +198,7 @@ export default function App() {
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // Mobile layout (Developer Workspace)
+  // Mobile layout (Developer)
   // ══════════════════════════════════════════════════════════════════════
   if (isMobile) {
     return (
@@ -218,14 +239,13 @@ export default function App() {
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // Desktop layout (Developer Workspace)
+  // Desktop layout (Developer)
   // ══════════════════════════════════════════════════════════════════════
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh', overflow:'hidden', background:'#070d19', color:'#dde8f5' }}>
       <Toolbar onRun={() => runPreview(true)} isRunning={isRunning} babelReady={babelReady} />
 
       <div style={{ display:'flex', flex:1, overflow:'hidden', minHeight:0 }}>
-        {/* Sidebar */}
         {isSidebarOpen && (
           <>
             <FileExplorer style={{ width:sidebarWidth, flexShrink:0 }} />
@@ -233,12 +253,10 @@ export default function App() {
           </>
         )}
 
-        {/* Editor + Console column */}
         <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden', minWidth:0 }}>
           <TabBar />
 
           <div ref={previewRef} style={{ display:'flex', flex:1, overflow:'hidden', minHeight:0 }}>
-            {/* Editor + Console */}
             <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden', minWidth:0 }}>
               <div style={{ flex:1, overflow:'hidden', minHeight:0 }}>
                 <CodeEditor />
@@ -251,7 +269,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Preview */}
             {isPreviewOpen && (
               <>
                 <ResizeHandle direction="col" onMouseDown={startPreview} />
@@ -268,7 +285,7 @@ export default function App() {
   );
 }
 
-// ─── Compact mobile header (المكون المطور الذي يحتوي على أزرار إدارة الروابط والمشاريع) ───
+// ─── Compact mobile header ────────────────────────────────────────────────────
 function MobileHeader({ onRun, isRunning, babelReady }) {
   const { 
     projectName, 
@@ -279,7 +296,6 @@ function MobileHeader({ onRun, isRunning, babelReady }) {
     generateClientLink
   } = useIDEStore();
 
-  // دالة طلب الاسم وإنشاء مشروع معزول جديد بالكامل
   const handleCreateProject = () => {
     const name = prompt("📂 أدخل اسم المشروع الجديد للزبون (مثال: متجر فيروز):");
     if (name && name.trim() !== "") {
@@ -288,12 +304,11 @@ function MobileHeader({ onRun, isRunning, babelReady }) {
     }
   };
 
-  // دالة نسخ الرابط الذكي للزبون الحالي الحامل لمعرف الـ ID
   const handleCopyLink = () => {
     const link = generateClientLink();
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(link);
-      alert("🔗 تم نسخ رابط المعاينة المستقل للزبون بنجاح! جاهز للإرسال الفوري.");
+      alert("🔗 تم نسخ رابط المعاينة المستقل والمشفر للزبون بنجاح! جاهز للإرسال.");
     } else {
       const textArea = document.createElement("textarea");
       textArea.value = link;
@@ -301,7 +316,7 @@ function MobileHeader({ onRun, isRunning, babelReady }) {
       textArea.select();
       document.execCommand("copy");
       document.body.removeChild(textArea);
-      alert("🔗 تم نسخ رابط المعاينة بنجاح (طريقة بديلة هاتفية)!");
+      alert("🔗 تم نسخ رابط المعاينة بنجاح!");
     }
   };
 
@@ -310,7 +325,6 @@ function MobileHeader({ onRun, isRunning, babelReady }) {
       display:'flex', alignItems:'center', gap:6, padding:'0 8px',
       height:54, background:'#0a1628', borderBottom:'1px solid #1e3a5c', flexShrink:0,
     }}>
-      {/* زر إنشاء مشروع جديد */}
       <button onClick={handleCreateProject} style={{
         background: '#10b981', color: '#fff', border: 'none', padding: '6px 10px', 
         borderRadius: 6, fontSize: 11, fontWeight: 'bold', cursor: 'pointer'
@@ -318,7 +332,6 @@ function MobileHeader({ onRun, isRunning, babelReady }) {
         ➕ مشروع
       </button>
 
-      {/* اسم المشروع النشط حالياً */}
       <span style={{ 
         color:'#00d4cc', fontWeight:700, fontSize:12, fontFamily:'monospace', 
         flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', textAlign: 'center' 
@@ -326,7 +339,6 @@ function MobileHeader({ onRun, isRunning, babelReady }) {
         {projectName}
       </span>
 
-      {/* زر نسخ رابط المعاينة الفوري للزبون */}
       <button onClick={handleCopyLink} style={{
         background: 'rgba(0, 212, 204, 0.15)', color: '#00d4cc', border: '1px solid #00d4cc', 
         padding: '6px 10px', borderRadius: 6, fontSize: 11, fontWeight: 'bold', cursor: 'pointer'
@@ -351,4 +363,3 @@ function MobileHeader({ onRun, isRunning, babelReady }) {
     </div>
   );
 }
-
