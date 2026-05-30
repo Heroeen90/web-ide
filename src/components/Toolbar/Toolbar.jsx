@@ -1,264 +1,223 @@
 /**
- * Toolbar.jsx — Top toolbar with run, project name, layout toggles
+ * Toolbar.jsx v2 — Professional top toolbar
  */
-import { useState, useRef } from 'react';
+import { useRef, useState } from 'react';
 import useIDEStore from '../../store/useIDEStore';
-
-const Btn = ({ onClick, title, disabled, className = '', children }) => (
-  <button
-    onClick={onClick}
-    disabled={disabled}
-    title={title}
-    className={`ide-icon-btn px-2 h-7 text-xs gap-1.5 ${className}`}
-  >
-    {children}
-  </button>
-);
+import { importZIP, readUploadedFiles } from '../../utils/zipHandler';
 
 export default function Toolbar({ onRun, isRunning, babelReady }) {
   const {
     projectName, setProjectName,
-    autoRefresh, toggleAutoRefresh,
-    isSidebarOpen, toggleSidebar,
-    isConsoleOpen, toggleConsole,
-    isPreviewOpen, togglePreview,
-    wordWrap, toggleWordWrap,
-    fontSize, setFontSize,
-    exportProject, loadProject, resetProject,
+    settings, updateSetting,
+    openSettings,
+    exportProjectZIP, exportProjectJSON,
+    loadProject, resetProject, addFiles,
+    toggleSidebar, toggleConsole, togglePreview,
+    isSidebarOpen, isConsoleOpen, isPreviewOpen,
   } = useIDEStore();
 
-  const [editingName, setEditingName] = useState(false);
-  const [nameDraft,   setNameDraft]   = useState(projectName);
+  const [editName,  setEditName]  = useState(false);
+  const [nameDraft, setNameDraft] = useState(projectName);
+  const [showExport, setShowExport] = useState(false);
   const fileInputRef = useRef(null);
+  const jsonInputRef = useRef(null);
 
   function commitName() {
-    const trimmed = nameDraft.trim();
-    if (trimmed) setProjectName(trimmed);
-    else setNameDraft(projectName);
-    setEditingName(false);
+    const t = nameDraft.trim();
+    if (t) setProjectName(t); else setNameDraft(projectName);
+    setEditName(false);
   }
 
-  function handleImport(e) {
+  async function handleUpload(e) {
+    const files = e.target.files;
+    if (!files?.length) return;
+    if (files.length === 1 && files[0].name.endsWith('.zip')) {
+      const data = await importZIP(files[0]);
+      loadProject(data);
+    } else {
+      const newFiles = await readUploadedFiles(files);
+      addFiles(newFiles);
+    }
+    e.target.value = '';
+  }
+
+  function handleJSONImport(e) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = ev => {
       try {
         const data = JSON.parse(ev.target.result);
         if (data.files) loadProject(data);
         else alert('Invalid .webide.json file');
-      } catch {
-        alert('Could not parse file. Make sure it is a valid .webide.json export.');
-      }
+      } catch { alert('Could not parse file'); }
     };
     reader.readAsText(file);
     e.target.value = '';
   }
 
-  function handleReset() {
-    if (confirm('Reset to the default starter project? All unsaved changes will be lost.')) {
-      resetProject();
-    }
-  }
+  const divider = <div style={{ width:1, height:22, background:'#1e3a5c', flexShrink:0 }} />;
 
   return (
-    <div
-      className="flex items-center h-12 px-3 gap-2 flex-shrink-0 border-b"
-      style={{ background: '#0a1628', borderColor: 'var(--ide-border)' }}
-    >
-      {/* ── Brand ─────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 mr-2 flex-shrink-0">
-        <span className="text-xl leading-none select-none">⚡</span>
-        <span
-          className="font-bold text-sm tracking-tight"
-          style={{ color: 'var(--ide-accent)', fontFamily: 'JetBrains Mono, monospace' }}
-        >
-          WebIDE
-        </span>
+    <div style={{
+      display:'flex', alignItems:'center', height:48, padding:'0 12px', gap:6,
+      background:'#0a1628', borderBottom:'1px solid #1e3a5c', flexShrink:0,
+      position:'relative', zIndex:10,
+    }}>
+      {/* Brand */}
+      <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0, marginRight:4 }}>
+        <span style={{ fontSize:20 }}>⚡</span>
+        <span style={{ color:'#00d4cc', fontWeight:900, fontSize:14, fontFamily:'monospace', letterSpacing:'-0.5px' }}>WebIDE</span>
       </div>
 
-      {/* ── Divider ───────────────────────────────────────────────── */}
-      <div className="w-px h-6 flex-shrink-0" style={{ background: 'var(--ide-border)' }} />
+      {divider}
 
-      {/* ── Run Button ────────────────────────────────────────────── */}
-      <button
-        onClick={onRun}
-        disabled={!babelReady || isRunning}
-        title={babelReady ? 'Run Preview (Ctrl+Enter)' : 'Loading Babel…'}
-        className="flex items-center gap-2 px-4 h-7 rounded-md text-xs font-semibold
-                   transition-all duration-150 flex-shrink-0 disabled:opacity-50"
+      {/* Run Button */}
+      <button onClick={onRun} disabled={!babelReady || isRunning}
+        title={babelReady ? 'Run (Ctrl+Enter)' : 'Loading Babel…'}
         style={{
-          background:    babelReady ? 'var(--ide-accent)' : 'var(--ide-surface)',
-          color:         babelReady ? '#070d19' : 'var(--ide-textMuted)',
-          boxShadow:     babelReady ? '0 0 12px rgba(0,212,204,0.25)' : 'none',
-        }}
-      >
+          display:'flex', alignItems:'center', gap:6, padding:'0 14px', height:30,
+          borderRadius:8, border:'none', fontWeight:700, fontSize:12, cursor:'pointer',
+          flexShrink:0, transition:'all .15s',
+          background: babelReady && !isRunning ? '#00d4cc' : '#122033',
+          color:      babelReady && !isRunning ? '#070d19' : '#6a8fae',
+          boxShadow:  babelReady && !isRunning ? '0 0 14px rgba(0,212,204,.3)' : 'none',
+          opacity:    !babelReady || isRunning ? 0.7 : 1,
+        }}>
         {isRunning
-          ? <><SpinIcon /> Running…</>
+          ? <><Spin/> Building…</>
           : babelReady
-            ? <><TriangleIcon /> Run</>
-            : <><SpinIcon /> Loading…</>
+            ? <><svg width="9" height="10" viewBox="0 0 9 10" fill="currentColor"><path d="M1 1l7 4-7 4V1z"/></svg> Run</>
+            : <><Spin/> Loading…</>
         }
       </button>
 
-      {/* ── Auto-refresh toggle ────────────────────────────────────── */}
-      <button
-        onClick={toggleAutoRefresh}
-        title={`Auto-refresh: ${autoRefresh ? 'ON' : 'OFF'}`}
-        className="flex items-center gap-1.5 px-2.5 h-7 rounded text-[11px] font-medium
-                   transition-all flex-shrink-0"
+      {/* Auto-refresh toggle */}
+      <button onClick={() => updateSetting('autoRefresh', !settings.autoRefresh)}
+        title={`Auto-refresh: ${settings.autoRefresh ? 'ON' : 'OFF'}`}
         style={{
-          background: autoRefresh ? 'rgba(0,212,204,0.1)' : 'transparent',
-          border:     `1px solid ${autoRefresh ? 'rgba(0,212,204,0.3)' : 'var(--ide-border)'}`,
-          color:      autoRefresh ? 'var(--ide-accent)' : 'var(--ide-textMuted)',
-        }}
-      >
-        <AutoIcon />
-        Auto
+          display:'flex', alignItems:'center', gap:4, padding:'4px 10px', height:28,
+          borderRadius:6, border:`1px solid ${settings.autoRefresh ? 'rgba(0,212,204,.4)' : '#1e3a5c'}`,
+          background: settings.autoRefresh ? 'rgba(0,212,204,.08)' : 'transparent',
+          color:      settings.autoRefresh ? '#00d4cc' : '#6a8fae',
+          fontSize:11, fontWeight:600, cursor:'pointer', flexShrink:0,
+        }}>
+        ⟳ Auto
       </button>
 
-      {/* ── Divider ───────────────────────────────────────────────── */}
-      <div className="w-px h-6 flex-shrink-0" style={{ background: 'var(--ide-border)' }} />
+      {divider}
 
-      {/* ── Project Name ──────────────────────────────────────────── */}
-      <div className="flex-1 min-w-0 flex items-center justify-center">
-        {editingName ? (
-          <input
-            autoFocus
-            value={nameDraft}
-            onChange={e => setNameDraft(e.target.value)}
+      {/* Project name */}
+      <div style={{ flex:1, minWidth:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        {editName ? (
+          <input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)}
             onBlur={commitName}
-            onKeyDown={e => { if (e.key === 'Enter') commitName(); if (e.key === 'Escape') { setNameDraft(projectName); setEditingName(false); } }}
-            className="text-center text-sm font-medium bg-transparent outline-none
-                       border-b w-48 pb-0.5"
-            style={{ color: 'var(--ide-text)', borderColor: 'var(--ide-accent)' }}
+            onKeyDown={e => { if (e.key === 'Enter') commitName(); if (e.key === 'Escape') { setNameDraft(projectName); setEditName(false); } }}
+            style={{ background:'transparent', border:'none', borderBottom:'1px solid #00d4cc', color:'#dde8f5', fontSize:13, fontWeight:600, textAlign:'center', outline:'none', width:200, padding:'2px 4px' }}
           />
         ) : (
-          <span
-            className="text-sm font-medium cursor-pointer hover:opacity-80 transition-opacity truncate px-2"
-            style={{ color: 'var(--ide-textMuted)' }}
-            onDoubleClick={() => { setNameDraft(projectName); setEditingName(true); }}
-            title="Double-click to rename project"
-          >
+          <span onDoubleClick={() => { setNameDraft(projectName); setEditName(true); }}
+            title="Double-click to rename"
+            style={{ color:'#6a8fae', fontSize:13, fontWeight:500, cursor:'pointer', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:200 }}>
             {projectName}
           </span>
         )}
       </div>
 
-      {/* ── Divider ───────────────────────────────────────────────── */}
-      <div className="w-px h-6 flex-shrink-0" style={{ background: 'var(--ide-border)' }} />
+      {divider}
 
-      {/* ── Editor Settings ───────────────────────────────────────── */}
-      <div className="flex items-center gap-0.5 flex-shrink-0">
-        {/* Font size */}
-        <div className="flex items-center gap-0.5 mr-1">
-          <Btn onClick={() => setFontSize(fontSize - 1)} title="Decrease font size">A-</Btn>
-          <span className="text-[11px] w-6 text-center" style={{ color: 'var(--ide-textMuted)' }}>{fontSize}</span>
-          <Btn onClick={() => setFontSize(fontSize + 1)} title="Increase font size">A+</Btn>
-        </div>
+      {/* Upload */}
+      <TBtn onClick={() => fileInputRef.current?.click()} title="Upload Files or ZIP">
+        ⬆ Upload
+      </TBtn>
 
-        <Btn onClick={toggleWordWrap}  title={`Word Wrap: ${wordWrap ? 'ON' : 'OFF'}`}
-             className={wordWrap ? 'text-ide-accent' : ''}>
-          <WrapIcon />
-        </Btn>
+      {/* Export dropdown */}
+      <div style={{ position:'relative' }}>
+        <TBtn onClick={() => setShowExport(v => !v)} title="Export project">
+          ⬇ Export
+        </TBtn>
+        {showExport && (
+          <div style={{ position:'absolute', top:32, right:0, background:'#0d1929', border:'1px solid #1e3a5c', borderRadius:8, overflow:'hidden', minWidth:160, zIndex:100, boxShadow:'0 8px 24px #00000060' }}
+               onMouseLeave={() => setShowExport(false)}>
+            {[
+              { label:'📦 Export ZIP',        action: () => { exportProjectZIP(); setShowExport(false); } },
+              { label:'📄 Export JSON',        action: () => { exportProjectJSON(); setShowExport(false); } },
+              { label:'📥 Import JSON',        action: () => { jsonInputRef.current?.click(); setShowExport(false); } },
+              { label:'🔄 Reset to Default',   action: () => { if (confirm('Reset project?')) { resetProject(); setShowExport(false); } }, danger: true },
+            ].map(item => (
+              <button key={item.label} onClick={item.action} style={{
+                display:'block', width:'100%', padding:'9px 14px', background:'transparent',
+                border:'none', color: item.danger ? '#f87171' : '#dde8f5', fontSize:12, textAlign:'right',
+                cursor:'pointer', fontFamily:'Cairo, sans-serif',
+              }}
+              onMouseEnter={e => e.target.style.background = 'rgba(255,255,255,0.07)'}
+              onMouseLeave={e => e.target.style.background = 'transparent'}>
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* ── Divider ───────────────────────────────────────────────── */}
-      <div className="w-px h-6 flex-shrink-0" style={{ background: 'var(--ide-border)' }} />
+      {divider}
 
-      {/* ── File Operations ───────────────────────────────────────── */}
-      <div className="flex items-center gap-0.5 flex-shrink-0">
-        <Btn onClick={exportProject} title="Export project as JSON">
-          <ExportIcon /> <span className="text-[11px]">Export</span>
-        </Btn>
-        <Btn onClick={() => fileInputRef.current?.click()} title="Import project JSON">
-          <ImportIcon /> <span className="text-[11px]">Import</span>
-        </Btn>
-        <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
-        <Btn onClick={handleReset} title="Reset to starter template">
-          <ResetIcon />
-        </Btn>
+      {/* Layout toggles */}
+      <div style={{ display:'flex', gap:2 }}>
+        <LayoutBtn active={isSidebarOpen}  onClick={toggleSidebar}  title="Toggle Sidebar"  >⊞ Files</LayoutBtn>
+        <LayoutBtn active={isConsoleOpen}  onClick={toggleConsole}  title="Toggle Console"  >⊟ Console</LayoutBtn>
+        <LayoutBtn active={isPreviewOpen}  onClick={togglePreview}  title="Toggle Preview"  >⊠ Preview</LayoutBtn>
       </div>
 
-      {/* ── Divider ───────────────────────────────────────────────── */}
-      <div className="w-px h-6 flex-shrink-0" style={{ background: 'var(--ide-border)' }} />
+      {divider}
 
-      {/* ── Layout Toggles ────────────────────────────────────────── */}
-      <div className="flex items-center gap-0.5 flex-shrink-0">
-        <LayoutBtn active={isSidebarOpen}  onClick={toggleSidebar}  title="Toggle Sidebar"  icon={<SidebarIcon />}  />
-        <LayoutBtn active={isConsoleOpen}  onClick={toggleConsole}  title="Toggle Console"  icon={<ConsoleIcon />}  />
-        <LayoutBtn active={isPreviewOpen}  onClick={togglePreview}  title="Toggle Preview"  icon={<PreviewIcon />}  />
-      </div>
+      {/* Settings */}
+      <button onClick={openSettings} title="Settings" style={{
+        background:'transparent', border:'none', color:'#6a8fae', cursor:'pointer',
+        fontSize:18, padding:'4px 5px', borderRadius:5, lineHeight:1, flexShrink:0,
+      }} onMouseEnter={e=>e.target.style.color='#dde8f5'} onMouseLeave={e=>e.target.style.color='#6a8fae'}>
+        ⚙
+      </button>
+
+      {/* Hidden file inputs */}
+      <input ref={fileInputRef} type="file" multiple accept="*" style={{ display:'none' }} onChange={handleUpload} />
+      <input ref={jsonInputRef} type="file" accept=".json" style={{ display:'none' }} onChange={handleJSONImport} />
     </div>
   );
 }
 
-function LayoutBtn({ active, onClick, title, icon }) {
+function TBtn({ onClick, title, children }) {
   return (
-    <button
-      onClick={onClick}
-      title={title}
-      className="ide-icon-btn w-7 h-7 rounded"
-      style={{ color: active ? 'var(--ide-accent)' : 'var(--ide-textMuted)' }}
-    >
-      {icon}
+    <button onClick={onClick} title={title} style={{
+      display:'flex', alignItems:'center', gap:4, padding:'4px 10px', height:28,
+      borderRadius:6, border:'1px solid #1e3a5c', background:'transparent',
+      color:'#6a8fae', fontSize:11, fontWeight:600, cursor:'pointer', flexShrink:0, transition:'all .15s',
+    }}
+    onMouseEnter={e => { e.currentTarget.style.color='#dde8f5'; e.currentTarget.style.borderColor='#2a4d78'; }}
+    onMouseLeave={e => { e.currentTarget.style.color='#6a8fae'; e.currentTarget.style.borderColor='#1e3a5c'; }}
+    >{children}</button>
+  );
+}
+
+function LayoutBtn({ active, onClick, title, children }) {
+  return (
+    <button onClick={onClick} title={title} style={{
+      padding:'4px 8px', height:28, borderRadius:5, border:'none', fontSize:11, fontWeight:600,
+      background: active ? 'rgba(0,212,204,0.1)' : 'transparent',
+      color:      active ? '#00d4cc' : '#6a8fae',
+      cursor:'pointer', transition:'all .15s', flexShrink:0,
+    }}>
+      {children}
     </button>
   );
 }
 
-// ── Icons (inline SVG) ────────────────────────────────────────────────────────
-const TriangleIcon = () => (
-  <svg width="10" height="11" viewBox="0 0 10 11" fill="currentColor">
-    <path d="M1 1.5l8 4-8 4V1.5z" />
-  </svg>
-);
-const SpinIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
-       className="animate-spin">
-    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4
-             M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-  </svg>
-);
-const AutoIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
-  </svg>
-);
-const WrapIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M3 6h18M3 12h12a3 3 0 110 6h-3M3 18h3"/>
-  </svg>
-);
-const ExportIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-  </svg>
-);
-const ImportIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
-  </svg>
-);
-const ResetIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/>
-    <path d="M3 3v5h5"/>
-  </svg>
-);
-const SidebarIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/>
-  </svg>
-);
-const ConsoleIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <rect x="3" y="3" width="18" height="18" rx="2"/>
-    <path d="M7 8l4 4-4 4M13 16h4"/>
-  </svg>
-);
-const PreviewIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <rect x="2" y="3" width="20" height="14" rx="2"/>
-    <path d="M8 21h8M12 17v4"/>
-  </svg>
-);
+function Spin() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+         style={{ animation:'spin .7s linear infinite' }}>
+      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </svg>
+  );
+}
+
