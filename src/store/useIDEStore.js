@@ -1,27 +1,87 @@
 /**
- * useIDEStore.js
+ * useIDEStore.js — Central Zustand Store (v2)
  * ─────────────────────────────────────────────────────────────────────────────
- * Central Zustand store for the entire IDE.
- * Files, UI layout, console logs, and project metadata all live here.
- * The file system and project name are persisted to localStorage.
+ * الجديد في هذه النسخة:
+ *   ✅ دعم مجلدات (مسارات متعددة في keys)
+ *   ✅ Settings panel (theme, font, editor options)
+ *   ✅ Upload files / ZIP
+ *   ✅ Export ZIP
+ *   ✅ IndexedDB fallback للمشاريع الكبيرة
+ *   ✅ إصلاح openTabs للمسارات الطويلة
  */
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { DEFAULT_FILES, FILE_LANGUAGE_MAP, FILE_TEMPLATES } from '../utils/defaultFiles.js';
+import { DEFAULT_FILES } from '../utils/defaultFiles.js';
+import { fileLang, fileTemplate, pathBasename, pathDirname, pathJoin } from '../utils/fileSystem.js';
+import { exportZIP } from '../utils/zipHandler.js';
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
-function getExt(filename) {
-  return filename.split('.').pop().toLowerCase();
+// ── IndexedDB storage adapter ─────────────────────────────────────────────────
+// يستخدم IDB لتجنب حد 5MB في localStorage
+function createIDBStorage() {
+  const DB_NAME = 'webide-db';
+  const STORE   = 'kv';
+
+  function openDB() {
+    return new Promise((res, rej) => {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+      req.onsuccess = () => res(req.result);
+      req.onerror   = () => rej(req.error);
+    });
+  }
+
+  async function idbGet(key) {
+    const db = await openDB();
+    return new Promise((res, rej) => {
+      const tx  = db.transaction(STORE, 'readonly');
+      const req = tx.objectStore(STORE).get(key);
+      req.onsuccess = () => res(req.result);
+      req.onerror   = () => rej(req.error);
+    });
+  }
+
+  async function idbSet(key, value) {
+    const db = await openDB();
+    return new Promise((res, rej) => {
+      const tx  = db.transaction(STORE, 'readwrite');
+      const req = tx.objectStore(STORE).put(value, key);
+      req.onsuccess = () => res();
+      req.onerror   = () => rej(req.error);
+    });
+  }
+
+  async function idbDel(key) {
+    const db = await openDB();
+    return new Promise((res, rej) => {
+      const tx  = db.transaction(STORE, 'readwrite');
+      const req = tx.objectStore(STORE).delete(key);
+      req.onsuccess = () => res();
+      req.onerror   = () => rej(req.error);
+    });
+  }
+
+  return {
+    getItem:    async (key)        => { try { return await idbGet(key); } catch { return null; } },
+    setItem:    async (key, value) => { try { await idbSet(key, value); } catch { localStorage.setItem(key, value); } },
+    removeItem: async (key)        => { try { await idbDel(key); } catch { localStorage.removeItem(key); } },
+  };
 }
 
-function getBaseName(filename) {
-  const parts = filename.split('.');
-  parts.pop();
-  return parts.join('.');
-}
+// ── Default settings ──────────────────────────────────────────────────────────
+const DEFAULT_SETTINGS = {
+  fontSize:      14,
+  wordWrap:      true,
+  tabSize:       2,
+  autoRefresh:   true,
+  autoSave:      true,
+  minimap:       false,
+  lineNumbers:   true,
+  theme:         'dark',          // 'dark' | 'light'
+  previewTheme:  'responsive',    // 'mobile' | 'tablet' | 'desktop' | 'responsive'
+};
 
-// ─── Store ────────────────────────────────────────────────────────────────────
+// ── Store ─────────────────────────────────────────────────────────────────────
 const useIDEStore = create(
   persist(
     (set, get) => ({
@@ -30,168 +90,222 @@ const useIDEStore = create(
       activeFile: 'App.jsx',
       openTabs:   ['App.jsx'],
 
-      // ── Layout & UI State ───────────────────────────────────────────────────
-      sidebarWidth:    240,
-      previewPercent:  44,   // % of the content area (editor + preview)
-      consoleHeight:   180,
-      isSidebarOpen:   true,
-      isConsoleOpen:   true,
-      isPreviewOpen:   true,
-      autoRefresh:     true,
-      wordWrap:        true,
-      fontSize:        14,
+      // ── Layout ──────────────────────────────────────────────────────────────
+      sidebarWidth:   240,
+      previewPercent: 44,
+      consoleHeight:  180,
+      isSidebarOpen:  true,
+      isConsoleOpen:  true,
+      isPreviewOpen:  true,
 
-      // ── Console Logs ─────────────────────────────────────────────────────────
+      // ── UI State ────────────────────────────────────────────────────────────
+      isSettingsOpen:   false,
+      isUploadingZIP:   false,
+      expandedFolders:  {},       // { 'components': true, 'utils': false }
+
+      // ── Console ─────────────────────────────────────────────────────────────
       consoleLogs: [],
 
-      // ── Project ──────────────────────────────────────────────────────────────
+      // ── Project ─────────────────────────────────────────────────────────────
       projectName: 'My Project',
+
+      // ── Settings ────────────────────────────────────────────────────────────
+      settings: { ...DEFAULT_SETTINGS },
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // Settings
+      // ═══════════════════════════════════════════════════════════════════════
+      updateSetting(key, value) {
+        set(s => ({ settings: { ...s.settings, [key]: value } }));
+      },
+      resetSettings() {
+        set({ settings: { ...DEFAULT_SETTINGS } });
+      },
+      openSettings()  { set({ isSettingsOpen: true  }); },
+      closeSettings() { set({ isSettingsOpen: false }); },
 
       // ═══════════════════════════════════════════════════════════════════════
       // File Actions
       // ═══════════════════════════════════════════════════════════════════════
 
-      /** Open a file (add tab if not already open) and activate it */
-      openFile(filename) {
-        set(state => {
-          const tabs = state.openTabs.includes(filename)
-            ? state.openTabs
-            : [...state.openTabs, filename];
-          return { openTabs: tabs, activeFile: filename };
-        });
+      openFile(path) {
+        set(s => ({
+          openTabs:   s.openTabs.includes(path) ? s.openTabs : [...s.openTabs, path],
+          activeFile: path,
+        }));
       },
 
-      /** Close a tab; switch to adjacent tab */
-      closeTab(filename) {
-        set(state => {
-          const tabs = state.openTabs.filter(t => t !== filename);
-          let active = state.activeFile;
-          if (active === filename) {
-            const idx = state.openTabs.indexOf(filename);
-            active = tabs[Math.max(0, idx - 1)] ?? tabs[0] ?? null;
-          }
+      closeTab(path) {
+        set(s => {
+          const tabs   = s.openTabs.filter(t => t !== path);
+          const idx    = s.openTabs.indexOf(path);
+          const active = s.activeFile === path
+            ? (tabs[Math.max(0, idx - 1)] ?? tabs[0] ?? null)
+            : s.activeFile;
           return { openTabs: tabs, activeFile: active };
         });
       },
 
-      /** Update file content (triggers auto-refresh in App via subscription) */
-      updateFile(filename, content) {
-        set(state => ({ files: { ...state.files, [filename]: content } }));
+      updateFile(path, content) {
+        set(s => ({ files: { ...s.files, [path]: content } }));
       },
 
-      /** Create a new file with an appropriate template */
-      createFile(filename) {
+      createFile(path) {
         const { files } = get();
-        if (files[filename] !== undefined) return; // already exists
-
-        const ext  = getExt(filename);
-        const base = getBaseName(filename);
-        const template = FILE_TEMPLATES[ext];
-        const content  = template ? template(base) : `// ${filename}\n`;
-
-        set(state => ({ files: { ...state.files, [filename]: content } }));
-        get().openFile(filename);
+        if (files[path] !== undefined) {
+          get().openFile(path);
+          return;
+        }
+        const content = fileTemplate(path);
+        set(s => ({ files: { ...s.files, [path]: content } }));
+        get().openFile(path);
+        // Auto-expand parent folder
+        const dir = pathDirname(path);
+        if (dir) get().expandFolder(dir);
       },
 
-      /** Delete a file and close its tab */
-      deleteFile(filename) {
-        set(state => {
-          const files = { ...state.files };
-          delete files[filename];
-          const openTabs  = state.openTabs.filter(t => t !== filename);
-          const activeFile = state.activeFile === filename
-            ? (openTabs[0] ?? null)
-            : state.activeFile;
+      createFolder(path) {
+        // Folders are virtual — just expand them
+        get().expandFolder(path);
+      },
+
+      deleteFile(path) {
+        set(s => {
+          const files    = { ...s.files };
+          // Delete file and any sub-files if it's a folder prefix
+          Object.keys(files).forEach(k => {
+            if (k === path || k.startsWith(path + '/')) delete files[k];
+          });
+          const openTabs   = s.openTabs.filter(t => t !== path && !t.startsWith(path + '/'));
+          const activeFile = !openTabs.includes(s.activeFile) ? (openTabs[0] ?? null) : s.activeFile;
           return { files, openTabs, activeFile };
         });
       },
 
-      /** Rename a file (updates tabs & active pointer) */
-      renameFile(oldName, newName) {
+      renameFile(oldPath, newPath) {
         const { files } = get();
-        if (!files[oldName] || files[newName] !== undefined) return;
+        if (!Object.prototype.hasOwnProperty.call(files, oldPath)) return;
+        if (files[newPath] !== undefined) return;
 
-        set(state => {
-          const f = { ...state.files };
-          f[newName] = f[oldName];
-          delete f[oldName];
+        set(s => {
+          const f = { ...s.files };
+          // Handle folder rename — rename all children
+          const isFolder = Object.keys(f).some(k => k.startsWith(oldPath + '/'));
+          if (isFolder) {
+            Object.keys(f).forEach(k => {
+              if (k.startsWith(oldPath + '/')) {
+                f[k.replace(oldPath, newPath)] = f[k];
+                delete f[k];
+              }
+            });
+          } else {
+            f[newPath] = f[oldPath];
+            delete f[oldPath];
+          }
           return {
             files:      f,
-            openTabs:   state.openTabs.map(t => (t === oldName ? newName : t)),
-            activeFile: state.activeFile === oldName ? newName : state.activeFile,
+            openTabs:   s.openTabs.map(t => t === oldPath ? newPath : t.startsWith(oldPath + '/') ? t.replace(oldPath, newPath) : t),
+            activeFile: s.activeFile === oldPath ? newPath : s.activeFile,
           };
         });
       },
 
-      /** Get Monaco language for the active file */
-      getActiveLanguage() {
-        const { activeFile } = get();
-        if (!activeFile) return 'plaintext';
-        return FILE_LANGUAGE_MAP[getExt(activeFile)] ?? 'plaintext';
+      duplicateFile(path) {
+        const { files } = get();
+        const content = files[path];
+        if (content === undefined) return;
+        const ext  = path.includes('.') ? '.' + path.split('.').pop() : '';
+        const base = ext ? path.slice(0, -ext.length) : path;
+        let newPath = `${base}-copy${ext}`;
+        let i = 2;
+        while (files[newPath] !== undefined) newPath = `${base}-copy${i++}${ext}`;
+        set(s => ({ files: { ...s.files, [newPath]: content } }));
+        get().openFile(newPath);
+      },
+
+      // ── Folder expand/collapse ─────────────────────────────────────────────
+      toggleFolder(path) {
+        set(s => ({
+          expandedFolders: {
+            ...s.expandedFolders,
+            [path]: !s.expandedFolders[path],
+          },
+        }));
+      },
+      expandFolder(path) {
+        set(s => ({ expandedFolders: { ...s.expandedFolders, [path]: true } }));
+      },
+      collapseAll() {
+        set({ expandedFolders: {} });
+      },
+
+      // ── Upload files ────────────────────────────────────────────────────────
+      addFiles(newFiles) {
+        set(s => ({
+          files: { ...s.files, ...newFiles },
+        }));
+        // Open first uploaded file
+        const first = Object.keys(newFiles)[0];
+        if (first) get().openFile(first);
       },
 
       // ═══════════════════════════════════════════════════════════════════════
-      // Console Actions
+      // Console
       // ═══════════════════════════════════════════════════════════════════════
-
       addLog(log) {
-        set(state => ({
+        set(s => ({
           consoleLogs: [
-            ...state.consoleLogs.slice(-300),    // keep last 300
+            ...s.consoleLogs.slice(-500),
             { ...log, id: Date.now() + Math.random() },
           ],
         }));
       },
-
-      clearConsole() {
-        set({ consoleLogs: [] });
-      },
+      clearConsole() { set({ consoleLogs: [] }); },
 
       // ═══════════════════════════════════════════════════════════════════════
-      // Layout / UI Toggles
+      // Layout
       // ═══════════════════════════════════════════════════════════════════════
-
-      setSidebarWidth(w)    { set({ sidebarWidth: Math.max(160, Math.min(400, w)) }); },
-      setPreviewPercent(p)  { set({ previewPercent: Math.max(20, Math.min(70, p)) }); },
-      setConsoleHeight(h)   { set({ consoleHeight: Math.max(80, Math.min(500, h)) }); },
-
-      toggleSidebar()     { set(s => ({ isSidebarOpen:  !s.isSidebarOpen  })); },
-      toggleConsole()     { set(s => ({ isConsoleOpen:   !s.isConsoleOpen   })); },
-      togglePreview()     { set(s => ({ isPreviewOpen:   !s.isPreviewOpen   })); },
-      toggleAutoRefresh() { set(s => ({ autoRefresh:     !s.autoRefresh     })); },
-      toggleWordWrap()    { set(s => ({ wordWrap:        !s.wordWrap        })); },
-      setFontSize(n)      { set({ fontSize: Math.max(10, Math.min(24, n)) }); },
-      setProjectName(n)   { set({ projectName: n }); },
+      setSidebarWidth(w)   { set({ sidebarWidth:   Math.max(160, Math.min(480, w)) }); },
+      setPreviewPercent(p) { set({ previewPercent: Math.max(20,  Math.min(75,  p)) }); },
+      setConsoleHeight(h)  { set({ consoleHeight:  Math.max(80,  Math.min(600, h)) }); },
+      toggleSidebar()      { set(s => ({ isSidebarOpen: !s.isSidebarOpen })); },
+      toggleConsole()      { set(s => ({ isConsoleOpen: !s.isConsoleOpen })); },
+      togglePreview()      { set(s => ({ isPreviewOpen: !s.isPreviewOpen })); },
 
       // ═══════════════════════════════════════════════════════════════════════
-      // Project Management
+      // Project
       // ═══════════════════════════════════════════════════════════════════════
+      setProjectName(n) { set({ projectName: n }); },
 
-      /** Load an imported project (JSON format) */
       loadProject(data) {
         const first = Object.keys(data.files)[0] ?? 'App.jsx';
         set({
-          files:       data.files,
-          projectName: data.name ?? 'Imported Project',
-          activeFile:  first,
-          openTabs:    [first],
-          consoleLogs: [],
+          files:           data.files,
+          projectName:     data.name ?? 'Imported Project',
+          activeFile:      first,
+          openTabs:        [first],
+          consoleLogs:     [],
+          expandedFolders: {},
         });
       },
 
-      /** Reset to the default starter project */
       resetProject() {
         set({
-          files:       { ...DEFAULT_FILES },
-          activeFile:  'App.jsx',
-          openTabs:    ['App.jsx'],
-          consoleLogs: [],
-          projectName: 'My Project',
+          files:           { ...DEFAULT_FILES },
+          activeFile:      'App.jsx',
+          openTabs:        ['App.jsx'],
+          consoleLogs:     [],
+          projectName:     'My Project',
+          expandedFolders: {},
         });
       },
 
-      /** Export current project as a JSON blob download */
-      exportProject() {
+      async exportProjectZIP() {
+        const { files, projectName } = get();
+        await exportZIP(projectName, files);
+      },
+
+      exportProjectJSON() {
         const { files, projectName } = get();
         const data = JSON.stringify({ name: projectName, files }, null, 2);
         const blob = new Blob([data], { type: 'application/json' });
@@ -204,22 +318,20 @@ const useIDEStore = create(
       },
     }),
 
-    // ── Persistence config ──────────────────────────────────────────────────
     {
-      name:    'webide-project-v1',
-      storage: createJSONStorage(() => localStorage),
-      // Only persist files and project meta; UI state is ephemeral
-      partialize: state => ({
-        files:       state.files,
-        projectName: state.projectName,
-        openTabs:    state.openTabs,
-        activeFile:  state.activeFile,
-        fontSize:    state.fontSize,
-        wordWrap:    state.wordWrap,
-        autoRefresh: state.autoRefresh,
+      name:    'webide-v2',
+      storage: createJSONStorage(createIDBStorage),
+      partialize: s => ({
+        files:           s.files,
+        projectName:     s.projectName,
+        openTabs:        s.openTabs,
+        activeFile:      s.activeFile,
+        settings:        s.settings,
+        expandedFolders: s.expandedFolders,
       }),
     }
   )
 );
 
 export default useIDEStore;
+
