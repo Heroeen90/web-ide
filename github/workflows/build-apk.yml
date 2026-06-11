@@ -1,0 +1,54 @@
+name: Build Android APK (Vite + React)
+
+on:
+  push:
+    branches:
+      - main 
+
+jobs:
+  build:
+    name: Build APK using Vite and Cordova
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      # 1. تثبيت الحزم وبناء مشروع React
+      - name: Install Dependencies and Build Vite
+        run: |
+          npm install
+          npm run build
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Install Cordova
+        run: npm install -g cordova
+
+      # 2. إنشاء الأندرويد ونسخ الملفات المجمعة
+      - name: Build Cordova Project
+        run: |
+          cordova create app com.roeen.webide WebIDE
+          rm -rf app/www/*
+          
+          # التغيير هنا: نحن ننسخ من مجلد dist الذي أنتجه Vite
+          rsync -av dist/ app/www/
+          
+          cd app
+          cordova platform add android
+          cordova build android
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: WebIDE-APK
+          path: app/platforms/android/app/build/outputs/apk/debug/app-debug.apk
