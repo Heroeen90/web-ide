@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: '18'
 
-      # بناء مشروع React وتجهيز مجلد dist
+      # بناء مشروع React
       - name: Install Dependencies and Build Vite
         run: |
           npm install
@@ -34,17 +34,24 @@ jobs:
       - name: Install Cordova
         run: npm install -g cordova
 
-      # تحويل مجلد dist إلى تطبيق أندرويد
+      # إنشاء الأندرويد، نسخ الملفات، وحقن الأيقونة
       - name: Build Cordova Project
         run: |
           cordova create app com.roeen.webide WebIDE
           rm -rf app/www/*
           rsync -av dist/ app/www/
+          
+          # نسخ الأيقونة من المجلد الرئيسي إلى مجلد تطبيق كوردوفا
+          cp icon.png app/
+          
+          # حقن سطر الأيقونة داخل ملف إعدادات التطبيق config.xml
+          sed -i 's/<\/widget>/    <icon src="icon.png" \/>\n<\/widget>/' app/config.xml
+          
           cd app
           cordova platform add android
           cordova build android
 
-      # رفع ملف الـ APK النهائي
+      # رفع ملف الـ APK النهائي للتحميل
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
